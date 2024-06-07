@@ -1,6 +1,6 @@
 #include "Table.h"
 #include "Board.h"
-#include "Network.h"
+#include "ResNetImpl.h"
 #include <torch/torch.h>
 #include <execution>
 #include <toml.hpp>
@@ -14,7 +14,7 @@ int main() {
     float epsilon = toml::find<float>(config, "epsilon"); 
     int batchSize = toml::find<int>(config, "batch_size");
     std::string savePath = toml::find<std::string>(config, "save_path");
-    Network network;
+    ResNet network;
     
     torch::Device device(torch::kCUDA);
     if (!torch::cuda::is_available()) {
@@ -22,9 +22,9 @@ int main() {
         device = torch::Device(torch::kCPU);
     }
 
-    network.to(device);
+    network->to(device);
     torch::nn::MSELoss lossFunction;
-    torch::optim::Adam optimizer(network.parameters());
+    torch::optim::Adam optimizer(network->parameters());
 
     //run simulation
     int epochs = toml::find<int>(config, "epochs");
@@ -70,7 +70,7 @@ int main() {
             });
 
             evaluationBuffer = evaluationBuffer.to(device);
-            torch::Tensor evaluation = network.forward(evaluationBuffer);
+            torch::Tensor evaluation = network->forward(evaluationBuffer);
 
             std::for_each(std::execution::par, range.begin(), range.end(), [&](int& index){
                 Board& board = boards[index];
@@ -112,7 +112,7 @@ int main() {
         torch::Tensor y = trainingData.second.view({-1, 1}).to(device);
 
         optimizer.zero_grad();
-        torch::Tensor output = network.forward(x);
+        torch::Tensor output = network->forward(x);
         torch::Tensor loss = lossFunction->forward(output, y);
         loss.backward();
 

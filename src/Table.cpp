@@ -66,7 +66,7 @@ std::pair<torch::Tensor, torch::Tensor> Table::getDataset(int size) {
         }
     }
 
-    std::cerr << xBuffer.size() << std::endl;
+    y = y.slice(0, 0, xBuffer.size());
     
     torch::Tensor x = torch::stack(xBuffer);
     sqlite3_finalize(stmt);

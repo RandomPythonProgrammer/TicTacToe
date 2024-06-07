@@ -1,6 +1,6 @@
-#include "Network.h"
+#include "ResNetImpl.h"
 
-Network::Network() {
+ResNetImpl::ResNetImpl() {
     conv1 = register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(3, 128, 3).bias(false).padding(1)));
     norm1 = register_module("norm1", torch::nn::BatchNorm2d(128));
     for (int i = 1; i <= 10; i++) {
@@ -12,7 +12,7 @@ Network::Network() {
     dnse3 = register_module("dnse3", torch::nn::Linear(128, 1));
 }
 
-torch::Tensor Network::forward(torch::Tensor x) {
+torch::Tensor ResNetImpl::forward(torch::Tensor x) {
     x = torch::relu(norm1->forward(conv1->forward(x)));
     for (BasicBlock& block: blocks) {
         x = block->forward(x);
