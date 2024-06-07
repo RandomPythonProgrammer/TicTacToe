@@ -13,6 +13,7 @@ int main() {
     int numBoards = toml::find<int>(config, "boards");
     float epsilon = toml::find<float>(config, "epsilon"); 
     int batchSize = toml::find<int>(config, "batch_size");
+    std::string savePath = toml::find<std::string>(config, "save_path");
     Network network;
     
     torch::Device device(torch::kCUDA);
@@ -118,4 +119,6 @@ int main() {
         std::cout << "Average Loss: " << loss.mean() << std::endl;
         optimizer.step();
     }
+
+    torch::save(network, savePath);
 }
