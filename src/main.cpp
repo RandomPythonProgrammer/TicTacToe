@@ -174,7 +174,8 @@ void test() {
                 }
                 std::cout << std::endl;
             }
-            std::cout << "Table Value: " << table.getQ(data) << std::endl;
+            //table value seems to be broken
+            //std::cout << "Table Value: " << table.getQ(data) << std::endl;
             Move move;
             std::cout << "Row: ";
             std::cin >> move.row;

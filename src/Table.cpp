@@ -36,7 +36,7 @@ Table& Table::updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vect
     sqlite3_stmt* stmt;
     std::string cmd = 
         "INSERT INTO q_values (state, value, count) "
-        "VALUES (?, ?, ?) "
+        "VALUES (?, ?, 1) "
         "ON CONFLICT(state) DO UPDATE SET "
         "value = (value * count + excluded.value) / (count + 1), "
         "count = count + 1;";
@@ -47,7 +47,6 @@ Table& Table::updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vect
             std::string data = serialize(states[i][j]);
             sqlite3_bind_blob(stmt, 1, data.data(), data.size(), SQLITE_STATIC);
             sqlite3_bind_double(stmt, 2, values[i]);
-            sqlite3_bind_int(stmt, 3, 1);
             int code = sqlite3_step(stmt);
             if (code != SQLITE_DONE) {
                 std::cerr << sqlite3_errmsg(db) << std::endl;;
@@ -63,8 +62,10 @@ Table& Table::updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vect
     return *this;
 }
 
+
+//seems to be broken, try not to use this function
 double Table::getQ(torch::Tensor& state) {
-std::lock_guard lock(mutex);
+    std::lock_guard lock(mutex);
     sqlite3_stmt* stmt;
     std::string cmd = "SELECT value FROM q_values WHERE state = ?";
     sqlite3_prepare(db, cmd.c_str(), -1, &stmt, nullptr);
@@ -75,9 +76,9 @@ std::lock_guard lock(mutex);
     int code;
     code = sqlite3_step(stmt);
     if (code == SQLITE_ROW) {
-        value = sqlite3_column_double(stmt, 1);
+        value = sqlite3_column_double(stmt, 0);
     } else {
-        std::cerr << "Failed to retrieve Q-value" << std::endl;;
+        std::cerr << "Failed to retrieve Q-value" << std::endl;
     }
 
     sqlite3_finalize(stmt);
