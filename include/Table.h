@@ -10,7 +10,9 @@ private:
 public:
     Table(std::string path);
 
-    Table& updateQ(torch::Tensor state, double value);
+    Table& updateQ(torch::Tensor& state, double value);
+    Table& updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vector<double>& values);
+    double getQ(torch::Tensor& state);
     std::pair<torch::Tensor, torch::Tensor> getDataset(int size);
     ~Table();
 };

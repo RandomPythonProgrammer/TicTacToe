@@ -7,43 +7,81 @@ Table::Table(std::string path) {
     }
 }
 
-Table& Table::updateQ(torch::Tensor state, double value) {
+Table& Table::updateQ(torch::Tensor& state, double value) {
     std::lock_guard lock(mutex);
     sqlite3_stmt* stmt;
-    std::string cmd = "SELECT value, count FROM q_values WHERE state = ?";
+    std::string cmd = 
+        "INSERT INTO q_values (state, value) "
+        "VALUES (?, ?) "
+        "ON CONFLICT(state) DO UPDATE SET "
+        "value = (value * count + excluded.value) / (count + 1), "
+        "count = count + 1;";
+    sqlite3_prepare(db, cmd.c_str(), -1, &stmt, nullptr);
+
+    std::string data = serialize(state);
+    sqlite3_bind_blob(stmt, 1, data.data(), data.size(), SQLITE_STATIC);
+    sqlite3_bind_double(stmt, 2, value);
+    int code = sqlite3_step(stmt);
+    if (code != SQLITE_DONE) {
+        std::cerr << sqlite3_errmsg(db) << std::endl;;
+    }
+
+    sqlite3_finalize(stmt);
+    return *this;
+}
+
+Table& Table::updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vector<double>& values) {
+    std::lock_guard lock(mutex);
+    sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
+    sqlite3_stmt* stmt;
+    std::string cmd = 
+        "INSERT INTO q_values (state, value, count) "
+        "VALUES (?, ?, ?) "
+        "ON CONFLICT(state) DO UPDATE SET "
+        "value = (value * count + excluded.value) / (count + 1), "
+        "count = count + 1;";
+    sqlite3_prepare(db, cmd.c_str(), -1, &stmt, nullptr);
+
+    for (int i = 0; i < states.size(); i++) {
+        for (int j = 0; j < states[i].size(); j++) {
+            std::string data = serialize(states[i][j]);
+            sqlite3_bind_blob(stmt, 1, data.data(), data.size(), SQLITE_STATIC);
+            sqlite3_bind_double(stmt, 2, values[i]);
+            sqlite3_bind_int(stmt, 3, 1);
+            int code = sqlite3_step(stmt);
+            if (code != SQLITE_DONE) {
+                std::cerr << sqlite3_errmsg(db) << std::endl;;
+            }
+            sqlite3_reset(stmt);
+            sqlite3_clear_bindings(stmt);
+        }
+    }
+
+    sqlite3_finalize(stmt);
+    
+    sqlite3_exec(db, "END TRANSACTION;", NULL, NULL, NULL);
+    return *this;
+}
+
+double Table::getQ(torch::Tensor& state) {
+std::lock_guard lock(mutex);
+    sqlite3_stmt* stmt;
+    std::string cmd = "SELECT value FROM q_values WHERE state = ?";
     sqlite3_prepare(db, cmd.c_str(), -1, &stmt, nullptr);
     std::string data = serialize(state);
     sqlite3_bind_blob(stmt, 1, data.data(), data.size(), SQLITE_STATIC);
-    int code = sqlite3_step(stmt);
-    double storedValue = 0;
-    int count = 0;
-    bool exists = false;
+
+    double value;
+    int code;
+    code = sqlite3_step(stmt);
     if (code == SQLITE_ROW) {
-        exists = true;
-        storedValue = sqlite3_column_double(stmt, 1);
-        count = sqlite3_column_int(stmt, 2);
-    }
-    sqlite3_finalize(stmt);
-
-    storedValue = (storedValue * count + value)/(count + 1);
-    count++;
-
-    if (exists) {
-        cmd = "UPDATE q_values SET (value, count) = (?, ?) WHERE state = ?";
-        sqlite3_prepare(db, cmd.c_str(), -1, &stmt, nullptr);
-        sqlite3_bind_double(stmt, 1, storedValue);
-        sqlite3_bind_int(stmt, 2, count);
-        sqlite3_bind_blob(stmt, 3, data.data(), data.size(), SQLITE_STATIC);
+        value = sqlite3_column_double(stmt, 1);
     } else {
-        cmd = "INSERT INTO q_values(state, value, count) VALUES (?, ?, ?)";
-        sqlite3_prepare(db, cmd.c_str(), -1, &stmt, nullptr);
-        sqlite3_bind_blob(stmt, 1, data.data(), data.size(), SQLITE_STATIC);
-        sqlite3_bind_double(stmt, 2, storedValue);
-        sqlite3_bind_int(stmt, 3, count);
+        std::cerr << "Failed to retrieve Q-value" << std::endl;;
     }
-    sqlite3_step(stmt);
+
     sqlite3_finalize(stmt);
-    return *this;
+    return value;
 }
 
 std::pair<torch::Tensor, torch::Tensor> Table::getDataset(int size) {

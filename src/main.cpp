@@ -35,6 +35,7 @@ void train() {
         std::vector<Board> boards = std::vector<Board>(numBoards);
         std::atomic<bool> complete = false;
         std::vector<std::vector<torch::Tensor>> states(numBoards);
+        std::vector<double> scores(numBoards, 0);
         int turn = 0;
         std::cout << "Running Simulation" << std::endl;
         while (!complete) {
@@ -93,8 +94,17 @@ void train() {
                             top = torch::argmin(scores).item<int>();
                         }
                     }
-                    states[index].push_back(board.getData());
+                    states[index].push_back(board.getData().clone());
                     board.makeMove(moves[index][top]);
+
+                    Result outcome = board.getResult();
+                    if (outcome != Result::NONE) {
+                        if (outcome == Result::CROSS) {
+                            scores[index] = 1;
+                        } else if (outcome == Result::CIRCLE) {
+                            scores[index] = -1;
+                        }
+                    }
                 }
             }
             turn++;
@@ -103,19 +113,7 @@ void train() {
 
         //update the q values
         std::cout << "Writing to Database" << std::endl;
-        for (int i = 0; i < numBoards; i++) {
-            float score = 0;
-            Result outcome = boards[i].getResult();
-            if (outcome == Result::CROSS) {
-                score = 1;
-            } else if (outcome == Result::CIRCLE) {
-                score = -1;
-            }
-
-            for (torch::Tensor& state: states[i]) {
-                table.updateQ(state, score);
-            }
-        }
+        table.updateQ(states, scores);
 
         //train using a partial dataset
         std::cout << "Training" << std::endl;
@@ -138,9 +136,11 @@ void train() {
 void test() {
     const toml::value config = toml::parse("config.toml");
     std::string savePath = toml::find<std::string>(config, "save_path");
+    Table table(toml::find<std::string>(config, "database"));
 
     std::cout << "0: for cross (first)" << std::endl;
     std::cout << "1: for circle (second)" <<std::endl;
+    std::cout << "Select: ";
     int option;
     std::cin >> option;
     Player human = (Player) option;
@@ -174,6 +174,7 @@ void test() {
                 }
                 std::cout << std::endl;
             }
+            std::cout << "Table Value: " << table.getQ(data) << std::endl;
             Move move;
             std::cout << "Row: ";
             std::cin >> move.row;
@@ -206,6 +207,7 @@ void test() {
 int main() {
     std::cout << "0: for train" << std::endl;
     std::cout << "1: for test" <<std::endl;
+    std::cout << "Select: ";
     int option;
     std::cin >> option;
     if (option == 0) {
