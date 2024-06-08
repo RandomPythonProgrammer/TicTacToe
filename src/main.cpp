@@ -2,10 +2,10 @@
 #include "Board.h"
 #include "ResNetImpl.h"
 #include <torch/torch.h>
-#include <execution>
 #include <toml.hpp>
 #include <ranges>
 #include <numeric>
+#include <omp.h>
 
 int main() {
     const toml::value config = toml::parse("config.toml");
@@ -14,6 +14,8 @@ int main() {
     float epsilon = toml::find<float>(config, "epsilon"); 
     int batchSize = toml::find<int>(config, "batch_size");
     std::string savePath = toml::find<std::string>(config, "save_path");
+    omp_set_num_threads(omp_get_max_threads());
+
     ResNet network;
     
     torch::Device device(torch::kCUDA);
@@ -29,12 +31,15 @@ int main() {
     //run simulation
     int epochs = toml::find<int>(config, "epochs");
     for (int epoch = 0; epoch < epochs; epoch++) {
+        std::cout << "Epoch: " << epoch << std::endl;
         std::vector<Board> boards = std::vector<Board>(numBoards);
         std::atomic<bool> complete = false;
         std::vector<std::vector<torch::Tensor>> states(numBoards);
-        std::cout << "Running epoch: " + std::to_string(epoch) << std::endl;
+        int turn = 0;
+        std::cout << "Running Simulation" << std::endl;
         while (!complete) {
             complete = true;
+            std::cout << "Turn: " << turn;
             std::vector<std::vector<Move>> moves(numBoards);
             std::vector<int> sizes(numBoards);
             std::atomic<int> num_moves = 0;
@@ -42,7 +47,8 @@ int main() {
             std::vector<int> range(numBoards);
             std::iota(range.begin(), range.end(), 0);
 
-            std::for_each(std::execution::par, range.begin(), range.end(), [&](int& index){
+            #pragma omp parallel for
+            for (int& index: range) {
                 Board& board = boards[index];
                 if (board.getResult() == Result::NONE) {
                     moves[index] = board.getMoves();
@@ -50,13 +56,14 @@ int main() {
                     num_moves += moves[index].size();
                     complete = false;
                 }
-            });
+            }
 
             torch::Tensor evaluationBuffer = torch::zeros({num_moves, 3, 3, 3});
             std::vector<int> offsets(numBoards + 1, 0);
             std::partial_sum(sizes.begin(), sizes.end(), offsets.begin()+1);
 
-            std::for_each(std::execution::par, range.begin(), range.end(), [&](int& index){
+            #pragma omp parallel for
+            for (int& index: range) {
                 Board& board = boards[index];
                 if (board.getResult() == Result::NONE) {
                     int offset =  offsets[index];
@@ -67,12 +74,13 @@ int main() {
                         board.undo();
                     }
                 }
-            });
+            }
 
             evaluationBuffer = evaluationBuffer.to(device);
             torch::Tensor evaluation = network->forward(evaluationBuffer);
 
-            std::for_each(std::execution::par, range.begin(), range.end(), [&](int& index){
+            #pragma omp parallel for
+            for (int& index: range) {
                 Board& board = boards[index];
                 if (board.getResult() == Result::NONE) {
                     int offset = offsets[index];
@@ -88,10 +96,13 @@ int main() {
                     states[index].push_back(board.getData());
                     board.makeMove(moves[index][top]);
                 }
-            });
+            }
+            turn++;
+            std::cout << "\33[2K\r";
         }
 
         //update the q values
+        std::cout << "Writing to Database" << std::endl;
         for (int i = 0; i < numBoards; i++) {
             float score = 0;
             Result outcome = boards[i].getResult();
@@ -107,6 +118,7 @@ int main() {
         }
 
         //train using a partial dataset
+        std::cout << "Training" << std::endl;
         std::pair<torch::Tensor, torch::Tensor> trainingData = table.getDataset(batchSize);
         torch::Tensor x = trainingData.first.to(device);
         torch::Tensor y = trainingData.second.view({-1, 1}).to(device);

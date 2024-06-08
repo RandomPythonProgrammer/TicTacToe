@@ -1,7 +1,10 @@
 #include "Table.h"
 
 Table::Table(std::string path) {
-    sqlite3_open(path.c_str(), &db);
+    int code = sqlite3_open(path.c_str(), &db);
+    if (code != SQLITE_OK) {
+        std::cerr << "Failed to Open Database File" << std::endl;
+    }
 }
 
 Table& Table::updateQ(torch::Tensor state, double value) {

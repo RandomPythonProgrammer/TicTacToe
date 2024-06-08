@@ -6,6 +6,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 find_package(SQLite3 REQUIRED)
 
+find_package(OpenMP REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp")
+
 find_package(toml11 REQUIRED)
 
 configure_file("${CMAKE_SOURCE_DIR}/config.toml" "${CMAKE_BINARY_DIR}/config.toml" COPYONLY)
@@ -16,5 +19,6 @@ add_executable(TicTacToe "${SOURCES}")
 
 target_link_libraries(TicTacToe "${TORCH_LIBRARIES}")
 target_link_libraries(TicTacToe "${SQLite3_LIBRARIES}")
+target_link_libraries(TicTacToe "${OpenMP_LIBRARIES}")
 
 set_property(TARGET TicTacToe PROPERTY CXX_STANDARD 17)
