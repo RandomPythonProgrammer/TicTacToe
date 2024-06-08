@@ -42,11 +42,11 @@ torch::Tensor& Board::getData() {
 
 Result Board::getResult() {
     for (int p = 0; p < 2; p++) {
+        bool diag1 = ((data[p][0][0] == 1) & (data[p][1][1] == 1) & (data[p][2][2] == 1)).item<bool>();
+        bool diag2 = ((data[p][2][0] == 1) & (data[p][1][1] == 1) & (data[p][0][2] == 1)).item<bool>();
         for (int i = 0; i < 3; i++) {
             bool row = torch::all(data.index({p, i, torch::indexing::Slice()}) == 1).item<bool>();
             bool col = torch::all(data.index({p, torch::indexing::Slice(), i}) == 1).item<bool>();
-            bool diag1 = ((data[p][0][0] == 1) & (data[p][1][1] == 1) & (data[p][2][2] == 1)).item<bool>();
-            bool diag2 = ((data[p][2][0] == 1) & (data[p][1][1] == 1) & (data[p][0][2] == 1)).item<bool>();
 
             if (row || col || diag1 || diag2) {
                 return (Result) p;

@@ -10,6 +10,6 @@ BasicBlockImpl::BasicBlockImpl(int ichannels, int ochannels) {
 torch::Tensor BasicBlockImpl::forward(torch::Tensor x) {
     torch::Tensor identity = x;
     x = torch::relu(norm1->forward(conv1->forward(x)));
-    x = torch::relu(norm2->forward(conv2->forward(x)));
+    x = torch::relu(norm2->forward(conv2->forward(x)) + identity);
     return x;
 }

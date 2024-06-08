@@ -7,7 +7,7 @@
 #include <numeric>
 #include <omp.h>
 
-int main() {
+void train() {
     const toml::value config = toml::parse("config.toml");
     Table table(toml::find<std::string>(config, "database"));
     int numBoards = toml::find<int>(config, "boards");
@@ -133,4 +133,88 @@ int main() {
     }
 
     torch::save(network, savePath);
+}
+
+void test() {
+    const toml::value config = toml::parse("config.toml");
+    std::string savePath = toml::find<std::string>(config, "save_path");
+
+    std::cout << "0: for cross (first)" << std::endl;
+    std::cout << "1: for circle (second)" <<std::endl;
+    int option;
+    std::cin >> option;
+    Player human = (Player) option;
+
+    Board board;
+    ResNet network;
+    torch::load(network, savePath);
+    
+    torch::Device device(torch::kCUDA);
+    if (!torch::cuda::is_available()) {
+        std::cerr << "Failed to start CUDA, using CPU" << std::endl;
+        device = torch::Device(torch::kCPU);
+    }
+
+    network->to(device);
+
+    while (board.getResult() == Result::NONE) {
+        torch::Tensor data = board.getData();
+        if (board.getTurn() == human) {
+            //displays the board on the screen
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
+                    if ((data[0][i][j] == 1).item<bool>()) {
+                        std::cout << "X";
+                    } else if ((data[1][i][j] == 1).item<bool>()) {
+                        std::cout << "O";
+                    } else {
+                        std::cout << " ";
+                    }
+                    std::cout << " ";
+                }
+                std::cout << std::endl;
+            }
+            Move move;
+            std::cout << "Row: ";
+            std::cin >> move.row;
+            std::cout << "Col: ";
+            std::cin >> move.col;
+            move.player = human;
+            board.makeMove(move);
+        } else {
+            std::vector<Move> moves = board.getMoves();
+            torch::Tensor buffer = torch::zeros({(long) moves.size(), 3, 3, 3});
+            for (int i = 0; i < moves.size(); i++) {
+                board.makeMove(moves[i]);
+                buffer[i] = board.getData();
+                board.undo();
+            }
+            buffer = buffer.to(device);
+            torch::Tensor output = network->forward(buffer);
+            int best;
+            if (human == Player::circle) {
+                best = torch::argmax(output).item<int>();
+            } else {
+                best = torch::argmin(output).item<int>();
+            }
+            board.makeMove(moves[best]);
+        }
+    }
+
+}
+
+int main() {
+    std::cout << "0: for train" << std::endl;
+    std::cout << "1: for test" <<std::endl;
+    int option;
+    std::cin >> option;
+    if (option == 0) {
+        train();
+    } else if (option == 1) {
+        test();
+    } else {
+        std::cerr << "invalid option" << std::endl;
+    }
+
+    return 0;
 }
