@@ -30,7 +30,7 @@ Table& Table::updateQ(torch::Tensor& state, double value) {
     return *this;
 }
 
-Table& Table::updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vector<double>& values) {
+Table& Table::updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vector<std::vector<double>>& values) {
     std::lock_guard lock(mutex);
     sqlite3_exec(db, "BEGIN TRANSACTION;", NULL, NULL, NULL);
     sqlite3_stmt* stmt;
@@ -46,7 +46,7 @@ Table& Table::updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vect
         for (int j = 0; j < states[i].size(); j++) {
             std::string data = serialize(states[i][j]);
             sqlite3_bind_blob(stmt, 1, data.data(), data.size(), SQLITE_STATIC);
-            sqlite3_bind_double(stmt, 2, values[i]);
+            sqlite3_bind_double(stmt, 2, values[i][j]);
             int code = sqlite3_step(stmt);
             if (code != SQLITE_DONE) {
                 std::cerr << sqlite3_errmsg(db) << std::endl;;
@@ -62,8 +62,6 @@ Table& Table::updateQ(std::vector<std::vector<torch::Tensor>>& states, std::vect
     return *this;
 }
 
-
-//seems to be broken, try not to use this function
 double Table::getQ(torch::Tensor& state) {
     std::lock_guard lock(mutex);
     sqlite3_stmt* stmt;

@@ -12,6 +12,7 @@ void train() {
     Table table(toml::find<std::string>(config, "database"));
     int numBoards = toml::find<int>(config, "boards");
     float epsilon = toml::find<float>(config, "epsilon"); 
+    float alpha = toml::find<float>(config, "alpha"); 
     int batchSize = toml::find<int>(config, "batch_size");
     std::string savePath = toml::find<std::string>(config, "save_path");
     omp_set_num_threads(omp_get_max_threads());
@@ -35,7 +36,7 @@ void train() {
         std::vector<Board> boards = std::vector<Board>(numBoards);
         std::atomic<bool> complete = false;
         std::vector<std::vector<torch::Tensor>> states(numBoards);
-        std::vector<double> scores(numBoards, 0);
+        std::vector<std::vector<double>> scores(numBoards);
         int turn = 0;
         std::cout << "Running Simulation" << std::endl;
         while (!complete) {
@@ -98,12 +99,17 @@ void train() {
                     board.makeMove(moves[index][top]);
 
                     Result outcome = board.getResult();
+                    double score = 0;
                     if (outcome != Result::NONE) {
                         if (outcome == Result::CROSS) {
-                            scores[index] = 1;
+                            score = 1;
                         } else if (outcome == Result::CIRCLE) {
-                            scores[index] = -1;
+                            score = -1;
                         }
+                    }
+                    scores[index] = std::vector<double>(states[index].size());
+                    for (int i = 0; i < states[index].size(); i++) {
+                        scores[index][i] = score * exp(-i * alpha);
                     }
                 }
             }
@@ -174,8 +180,7 @@ void test() {
                 }
                 std::cout << std::endl;
             }
-            //table value seems to be broken
-            //std::cout << "Table Value: " << table.getQ(data) << std::endl;
+            std::cout << "Table Value: " << table.getQ(data) << std::endl;
             Move move;
             std::cout << "Row: ";
             std::cin >> move.row;
