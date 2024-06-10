@@ -14,6 +14,7 @@ void train() {
     float epsilon = toml::find<float>(config, "epsilon"); 
     float alpha = toml::find<float>(config, "alpha"); 
     int batchSize = toml::find<int>(config, "batch_size");
+    int trainStep = toml::find<int>(config, "train_step");
     std::string savePath = toml::find<std::string>(config, "save_path");
     omp_set_num_threads(omp_get_max_threads());
 
@@ -27,11 +28,11 @@ void train() {
 
     network->to(device);
     torch::nn::MSELoss lossFunction;
-    torch::optim::Adam optimizer(network->parameters());
+    torch::optim::Adam optimizer(network->parameters(), 0.01);
 
     //run simulation
     int epochs = toml::find<int>(config, "epochs");
-    for (int epoch = 0; epoch < epochs; epoch++) {
+    for (int epoch = 1; epoch <= epochs; epoch++) {
         std::cout << "Epoch: " << epoch << std::endl;
         std::vector<Board> boards = std::vector<Board>(numBoards);
         std::atomic<bool> complete = false;
@@ -95,11 +96,12 @@ void train() {
                             top = torch::argmin(scores).item<int>();
                         }
                     }
-                    states[index].push_back(board.getData().clone());
                     board.makeMove(moves[index][top]);
+                    states[index].push_back(board.getData().clone());
 
                     Result outcome = board.getResult();
                     double score = 0;
+                    int numMoves = states[index].size();
                     if (outcome != Result::NONE) {
                         if (outcome == Result::CROSS) {
                             score = 1;
@@ -107,8 +109,9 @@ void train() {
                             score = -1;
                         }
                     }
+                    score *= exp(-numMoves * alpha);
                     scores[index] = std::vector<double>(states[index].size());
-                    for (int i = 0; i < states[index].size(); i++) {
+                    for (int i = 0; i < numMoves; i++) {
                         scores[index][i] = score * exp(-i * alpha);
                     }
                 }
@@ -122,18 +125,20 @@ void train() {
         table.updateQ(states, scores);
 
         //train using a partial dataset
-        std::cout << "Training" << std::endl;
-        std::pair<torch::Tensor, torch::Tensor> trainingData = table.getDataset(batchSize);
-        torch::Tensor x = trainingData.first.to(device);
-        torch::Tensor y = trainingData.second.view({-1, 1}).to(device);
+        if ((epoch >= trainStep) && (epoch % trainStep == 0)) {
+            std::cout << "Training" << std::endl;
+            std::pair<torch::Tensor, torch::Tensor> trainingData = table.getDataset(batchSize);
+            torch::Tensor x = trainingData.first.to(device);
+            torch::Tensor y = trainingData.second.view({-1, 1}).to(device);
 
-        optimizer.zero_grad();
-        torch::Tensor output = network->forward(x);
-        torch::Tensor loss = lossFunction->forward(output, y);
-        loss.backward();
+            optimizer.zero_grad();
+            torch::Tensor output = network->forward(x);
+            torch::Tensor loss = lossFunction->forward(output, y);
+            loss.backward();
 
-        std::cout << "Average Loss: " << loss.mean() << std::endl;
-        optimizer.step();
+            std::cout << "Average Loss: " << loss.mean() << std::endl;
+            optimizer.step();
+        }
     }
 
     torch::save(network, savePath);
@@ -146,6 +151,7 @@ void test() {
 
     std::cout << "0: for cross (first)" << std::endl;
     std::cout << "1: for circle (second)" <<std::endl;
+    std::cout << "2: for none (ai only)" <<std::endl;
     std::cout << "Select: ";
     int option;
     std::cin >> option;
@@ -164,23 +170,25 @@ void test() {
     network->to(device);
 
     while (board.getResult() == Result::NONE) {
+        //display the board
+        std::cout << std::endl;
         torch::Tensor data = board.getData();
-        if (board.getTurn() == human) {
-            //displays the board on the screen
-            for (int i = 0; i < 3; i++) {
-                for (int j = 0; j < 3; j++) {
-                    if ((data[0][i][j] == 1).item<bool>()) {
-                        std::cout << "X";
-                    } else if ((data[1][i][j] == 1).item<bool>()) {
-                        std::cout << "O";
-                    } else {
-                        std::cout << " ";
-                    }
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                if ((data[0][i][j] == 1).item<bool>()) {
+                    std::cout << "X";
+                } else if ((data[1][i][j] == 1).item<bool>()) {
+                    std::cout << "O";
+                } else {
                     std::cout << " ";
                 }
-                std::cout << std::endl;
+                std::cout << " ";
             }
-            std::cout << "Table Value: " << table.getQ(data) << std::endl;
+            std::cout << std::endl;
+        }
+        std::cout << "Table Value: " << table.getQ(data) << std::endl;
+
+        if (board.getTurn() == human) {
             Move move;
             std::cout << "Row: ";
             std::cin >> move.row;
@@ -198,8 +206,18 @@ void test() {
             }
             buffer = buffer.to(device);
             torch::Tensor output = network->forward(buffer);
+
+            //display all moves and predicted values
+            std::cout << "Scores" << std::endl;
+            for (int i = 0; i < moves.size(); i++) {
+                Move& move = moves[i];
+                board.makeMove(move);
+                printf("(%d, %d) Result: %d | Predicted: %f, Real: %f\n", move.row, move.col, (int) board.getResult(), output[i].item<float>(), table.getQ(board.getData()));
+                board.undo();
+            }
+
             int best;
-            if (human == Player::circle) {
+            if (board.getTurn() == Player::cross) {
                 best = torch::argmax(output).item<int>();
             } else {
                 best = torch::argmin(output).item<int>();

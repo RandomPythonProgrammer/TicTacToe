@@ -4,6 +4,7 @@
 enum class Player {
     cross,
     circle,
+    NONE,
 };
 
 enum class Result {
