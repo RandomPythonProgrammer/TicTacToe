@@ -28,7 +28,7 @@ void train() {
 
     network->to(device);
     torch::nn::MSELoss lossFunction;
-    torch::optim::Adam optimizer(network->parameters(), 0.01);
+    torch::optim::Adam optimizer(network->parameters());
 
     //run simulation
     int epochs = toml::find<int>(config, "epochs");
